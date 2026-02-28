@@ -649,11 +649,12 @@ async function ensureExcalidrawLoaded() {
   }
 
   excalidrawLoadPromise = (async () => {
+    window.EXCALIDRAW_ASSET_PATH = 'https://esm.sh/@excalidraw/excalidraw@0.18.0/dist/prod/';
     ensureExcalidrawStyles();
     const [reactMod, reactDomMod, excalidrawMod] = await Promise.all([
       import('react'),
       import('react-dom/client'),
-      import('https://esm.sh/@excalidraw/excalidraw@0.18.0?external=react,react-dom'),
+      import('https://esm.sh/@excalidraw/excalidraw@0.18.0/dist/dev/index.js?external=react,react-dom'),
     ]);
     ReactLib = reactMod.default;
     createRootFn = reactDomMod.createRoot;

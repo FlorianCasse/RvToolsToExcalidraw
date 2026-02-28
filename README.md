@@ -27,7 +27,7 @@ Multiple sites are laid out side by side, each assigned a distinct colour palett
 
 ## Usage
 
-1. Open the [live app](https://floriancasse.github.io/DrawMyInfra/)
+1. Open the [live app](https://floriancasse.github.io/DrawMyInfra)
 2. Drop one or more `.xlsx` files onto the upload area
 3. Optionally rename each site
 4. Click **Generate Diagram**

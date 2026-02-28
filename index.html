@@ -615,6 +615,16 @@ async function generate() {
   }
 }
 </script>
+<script type="importmap">
+{
+  "imports": {
+    "react": "https://esm.sh/react@19",
+    "react/jsx-runtime": "https://esm.sh/react@19/jsx-runtime",
+    "react-dom": "https://esm.sh/react-dom@19",
+    "react-dom/client": "https://esm.sh/react-dom@19/client"
+  }
+}
+</script>
 <script type="module">
 let root = null;
 let excalidrawLoadPromise = null;
@@ -626,7 +636,7 @@ function ensureExcalidrawStyles() {
   if (document.querySelector('link[data-excalidraw-css="true"]')) return;
   const link = document.createElement('link');
   link.rel = 'stylesheet';
-  link.href = 'https://esm.sh/@excalidraw/excalidraw/dist/dev/index.css';
+  link.href = 'https://esm.sh/@excalidraw/excalidraw@0.18.0/dist/dev/index.css';
   link.setAttribute('data-excalidraw-css', 'true');
   document.head.appendChild(link);
 }
@@ -639,12 +649,11 @@ async function ensureExcalidrawLoaded() {
   }
 
   excalidrawLoadPromise = (async () => {
-    window.EXCALIDRAW_ASSET_PATH = 'https://esm.sh/@excalidraw/excalidraw/dist/prod/';
     ensureExcalidrawStyles();
     const [reactMod, reactDomMod, excalidrawMod] = await Promise.all([
-      import('https://esm.sh/react@18'),
-      import('https://esm.sh/react-dom@18/client'),
-      import('https://esm.sh/@excalidraw/excalidraw/dist/dev/index.js'),
+      import('react'),
+      import('react-dom/client'),
+      import('https://esm.sh/@excalidraw/excalidraw@0.18.0?external=react,react-dom'),
     ]);
     ReactLib = reactMod.default;
     createRootFn = reactDomMod.createRoot;

@@ -26,6 +26,33 @@
     --border:      #DDE1E9;
     --text:        #2D3748;
     --muted:       #718096;
+    --drop-hover:  #fff6f2;
+    --input-bg:    #FFFFFF;
+    --code-bg:     rgba(0,0,0,.06);
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --itq-dark:   #E8EEFF;
+      --bg:         #0F1117;
+      --card:       #1A1B26;
+      --border:     #2D3347;
+      --text:       #CBD5E0;
+      --muted:      #718096;
+      --drop-hover: #1E1B2E;
+      --input-bg:   #252636;
+      --code-bg:    rgba(255,255,255,.08);
+    }
+  }
+  :root[data-theme="dark"] {
+    --itq-dark:   #E8EEFF;
+    --bg:         #0F1117;
+    --card:       #1A1B26;
+    --border:     #2D3347;
+    --text:       #CBD5E0;
+    --muted:      #718096;
+    --drop-hover: #1E1B2E;
+    --input-bg:   #252636;
+    --code-bg:    rgba(255,255,255,.08);
   }
   *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
   body {
@@ -37,6 +64,7 @@
     flex-direction: column;
     align-items: center;
     padding: 40px 20px 80px;
+    transition: background-color .3s, color .3s;
   }
   header { text-align: center; margin-bottom: 40px; }
   .logo-bar {
@@ -64,7 +92,7 @@
     transition: border-color .2s, background .2s;
   }
   .drop-zone:hover, .drop-zone.drag-over {
-    border-color: var(--itq-orange); background: #fff6f2;
+    border-color: var(--itq-orange); background: var(--drop-hover);
   }
   .drop-icon { font-size: 2.5rem; margin-bottom: 10px; }
   .drop-text { font-size: 1rem; color: var(--muted); }
@@ -84,7 +112,8 @@
   .site-input {
     border: 1px solid var(--border); border-radius: 6px;
     padding: 4px 10px; font-size: 0.85rem; width: 130px;
-    color: var(--text); outline: none; transition: border-color .2s;
+    color: var(--text); background: var(--input-bg);
+    outline: none; transition: border-color .2s, background .3s;
   }
   .site-input:focus { border-color: var(--itq-orange); }
   .remove-btn {
@@ -100,7 +129,7 @@
     transition: background .2s, transform .1s; letter-spacing: .3px;
   }
   .btn:hover:not(:disabled) { background: #d44d1e; transform: translateY(-1px); }
-  .btn:disabled { background: #ccc; cursor: not-allowed; transform: none; }
+  .btn:disabled { background: var(--border); color: var(--muted); cursor: not-allowed; transform: none; }
   #status {
     margin-top: 18px; text-align: center;
     font-size: 0.9rem; min-height: 22px;
@@ -139,6 +168,14 @@
     margin-top: 40px; font-size: 0.8rem; color: var(--muted); text-align: center;
   }
   footer a { color: var(--itq-orange); text-decoration: none; }
+  footer code { background: var(--code-bg); padding: 1px 5px; border-radius: 4px; }
+  .theme-toggle {
+    background: none; border: 1px solid var(--border); border-radius: 6px;
+    cursor: pointer; padding: 3px 8px; font-size: 0.85rem;
+    color: var(--muted); margin-left: 10px; vertical-align: middle;
+    transition: border-color .2s, color .2s;
+  }
+  .theme-toggle:hover { border-color: var(--itq-orange); color: var(--itq-orange); }
 </style>
 </head>
 <body>
@@ -175,6 +212,7 @@
   Built with ♥ by Florian Casse &nbsp;·&nbsp;
   Open the generated <code>.excalidraw</code> file at
   <a href="https://excalidraw.com" target="_blank">excalidraw.com</a>
+  <button class="theme-toggle" id="theme-toggle" aria-label="Toggle theme"></button>
 </footer>
 
 <script>
@@ -526,6 +564,47 @@ function readFile(file) {
   });
 }
 
+// ── Theme toggle ──────────────────────────────────────────────────────────────
+(function () {
+  const root    = document.documentElement;
+  const btn     = document.getElementById('theme-toggle');
+  const mq      = window.matchMedia('(prefers-color-scheme: dark)');
+
+  function activeTheme() {
+    const explicit = root.getAttribute('data-theme');
+    if (explicit) return explicit;
+    return mq.matches ? 'dark' : 'light';
+  }
+
+  function applyTheme(theme) {
+    root.setAttribute('data-theme', theme);
+    btn.textContent = theme === 'dark' ? '☀️' : '🌙';
+    document.dispatchEvent(new CustomEvent('theme-changed', { detail: { theme } }));
+  }
+
+  // Restore saved preference, or follow system
+  const saved = localStorage.getItem('dmi-theme');
+  if (saved) {
+    applyTheme(saved);
+  } else {
+    btn.textContent = mq.matches ? '☀️' : '🌙';
+  }
+
+  btn.addEventListener('click', () => {
+    const next = activeTheme() === 'dark' ? 'light' : 'dark';
+    localStorage.setItem('dmi-theme', next);
+    applyTheme(next);
+  });
+
+  // Track system changes when no explicit override is saved
+  mq.addEventListener('change', () => {
+    if (!localStorage.getItem('dmi-theme')) {
+      btn.textContent = mq.matches ? '☀️' : '🌙';
+      document.dispatchEvent(new CustomEvent('theme-changed', { detail: { theme: activeTheme() } }));
+    }
+  });
+})();
+
 async function generate() {
   if (!files.length) return;
   genBtn.disabled = true;
@@ -555,21 +634,33 @@ import * as ExcalidrawLib from "https://esm.sh/@excalidraw/excalidraw/dist/dev/i
 
 let root = null;
 
-document.addEventListener('diagram-ready', () => {
+function excalidrawTheme() {
+  return document.documentElement.getAttribute('data-theme') === 'dark' ||
+    (!document.documentElement.getAttribute('data-theme') && window.matchMedia('(prefers-color-scheme: dark)').matches)
+    ? 'dark' : 'light';
+}
+
+function renderDiagram() {
   const doc = window.__excalidrawDoc;
-  const section = document.getElementById('preview-section');
+  if (!doc) return;
   const mount = document.getElementById('excalidraw-mount');
-
-  section.hidden = false;
-  section.scrollIntoView({ behavior: 'smooth', block: 'start' });
-
   if (root) root.unmount();
   root = createRoot(mount);
   root.render(React.createElement(ExcalidrawLib.Excalidraw, {
     initialData: { elements: doc.elements, appState: doc.appState, scrollToContent: true },
     viewModeEnabled: true,
+    theme: excalidrawTheme(),
   }));
+}
+
+document.addEventListener('diagram-ready', () => {
+  const section = document.getElementById('preview-section');
+  section.hidden = false;
+  section.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  renderDiagram();
 });
+
+document.addEventListener('theme-changed', renderDiagram);
 
 document.getElementById('download-btn').addEventListener('click', () => {
   const doc = window.__excalidrawDoc;

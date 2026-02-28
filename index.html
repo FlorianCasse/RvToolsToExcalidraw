@@ -4,19 +4,6 @@
 <meta charset="UTF-8"/>
 <meta name="viewport" content="width=device-width,initial-scale=1"/>
 <title>DrawMyInfra</title>
-<script src="https://cdn.jsdelivr.net/npm/xlsx/dist/xlsx.full.min.js"></script>
-<link rel="stylesheet" href="https://esm.sh/@excalidraw/excalidraw/dist/dev/index.css"/>
-<script>window.EXCALIDRAW_ASSET_PATH = "https://esm.sh/@excalidraw/excalidraw/dist/prod/";</script>
-<script type="importmap">
-{
-  "imports": {
-    "react": "https://esm.sh/react@18",
-    "react/jsx-runtime": "https://esm.sh/react@18/jsx-runtime",
-    "react-dom": "https://esm.sh/react-dom@18",
-    "react-dom/client": "https://esm.sh/react-dom@18/client"
-  }
-}
-</script>
 <style>
   :root {
     --primary:     #2DC4B8;
@@ -255,10 +242,24 @@ function fmtPct(v) {
   return isNaN(f) ? (v || '—') : `${Math.round(f)}%`;
 }
 
-// ── RVTools parser ────────────────────────────────────────────────────────────
-function parseRvtools(arrayBuffer, siteName) {
-  const wb = XLSX.read(arrayBuffer, { type: 'array' });
+let xlsxLoadPromise = null;
 
+function ensureXlsxLoaded() {
+  if (window.XLSX) return Promise.resolve(window.XLSX);
+  if (xlsxLoadPromise) return xlsxLoadPromise;
+  xlsxLoadPromise = new Promise((resolve, reject) => {
+    const script = document.createElement('script');
+    script.src = 'https://cdn.jsdelivr.net/npm/xlsx/dist/xlsx.full.min.js';
+    script.async = true;
+    script.onload = () => resolve(window.XLSX);
+    script.onerror = () => reject(new Error('Failed to load XLSX parser'));
+    document.head.appendChild(script);
+  });
+  return xlsxLoadPromise;
+}
+
+// ── RVTools parser ────────────────────────────────────────────────────────────
+function parseRvtools(wb, siteName) {
   const sheetMap = {};
   wb.SheetNames.forEach(s => sheetMap[s.toLowerCase()] = s);
 
@@ -333,8 +334,7 @@ function parseRvtools(arrayBuffer, siteName) {
 }
 
 // ── LiveOptics parser ─────────────────────────────────────────────────────────
-function parseLiveOptics(arrayBuffer, siteName) {
-  const wb = XLSX.read(arrayBuffer, { type: 'array' });
+function parseLiveOptics(wb, siteName) {
   const sheetMap = {};
   wb.SheetNames.forEach(s => sheetMap[s.toLowerCase()] = s);
 
@@ -399,8 +399,8 @@ function parseLiveOptics(arrayBuffer, siteName) {
 function parseFile(arrayBuffer, siteName) {
   const wb = XLSX.read(arrayBuffer, { type: 'array' });
   const lower = wb.SheetNames.map(s => s.toLowerCase());
-  if (lower.includes('vhost'))     return parseRvtools(arrayBuffer, siteName);
-  if (lower.includes('esx hosts')) return parseLiveOptics(arrayBuffer, siteName);
+  if (lower.includes('vhost'))     return parseRvtools(wb, siteName);
+  if (lower.includes('esx hosts')) return parseLiveOptics(wb, siteName);
   throw new Error(`"${siteName}" is not a recognised RVTools or LiveOptics export`);
 }
 
@@ -598,6 +598,7 @@ async function generate() {
   status.innerHTML = '<span class="spinner"></span> Generating diagram…';
 
   try {
+    await ensureXlsxLoaded();
     const sites = [];
     for (const item of files) {
       const buf = await readFile(item.file);
@@ -615,11 +616,43 @@ async function generate() {
 }
 </script>
 <script type="module">
-import React from "react";
-import { createRoot } from "react-dom/client";
-import * as ExcalidrawLib from "https://esm.sh/@excalidraw/excalidraw/dist/dev/index.js?external=react,react-dom";
-
 let root = null;
+let excalidrawLoadPromise = null;
+let ReactLib = null;
+let createRootFn = null;
+let ExcalidrawLib = null;
+
+function ensureExcalidrawStyles() {
+  if (document.querySelector('link[data-excalidraw-css="true"]')) return;
+  const link = document.createElement('link');
+  link.rel = 'stylesheet';
+  link.href = 'https://esm.sh/@excalidraw/excalidraw/dist/dev/index.css';
+  link.setAttribute('data-excalidraw-css', 'true');
+  document.head.appendChild(link);
+}
+
+async function ensureExcalidrawLoaded() {
+  if (ExcalidrawLib && ReactLib && createRootFn) return;
+  if (excalidrawLoadPromise) {
+    await excalidrawLoadPromise;
+    return;
+  }
+
+  excalidrawLoadPromise = (async () => {
+    window.EXCALIDRAW_ASSET_PATH = 'https://esm.sh/@excalidraw/excalidraw/dist/prod/';
+    ensureExcalidrawStyles();
+    const [reactMod, reactDomMod, excalidrawMod] = await Promise.all([
+      import('https://esm.sh/react@18'),
+      import('https://esm.sh/react-dom@18/client'),
+      import('https://esm.sh/@excalidraw/excalidraw/dist/dev/index.js'),
+    ]);
+    ReactLib = reactMod.default;
+    createRootFn = reactDomMod.createRoot;
+    ExcalidrawLib = excalidrawMod;
+  })();
+
+  await excalidrawLoadPromise;
+}
 
 function excalidrawTheme() {
   return document.documentElement.getAttribute('data-theme') === 'dark' ||
@@ -627,13 +660,14 @@ function excalidrawTheme() {
     ? 'dark' : 'light';
 }
 
-function renderDiagram() {
+async function renderDiagram() {
   const doc = window.__excalidrawDoc;
   if (!doc) return;
+  await ensureExcalidrawLoaded();
   const mount = document.getElementById('excalidraw-mount');
   if (root) root.unmount();
-  root = createRoot(mount);
-  root.render(React.createElement(ExcalidrawLib.Excalidraw, {
+  root = createRootFn(mount);
+  root.render(ReactLib.createElement(ExcalidrawLib.Excalidraw, {
     initialData: { elements: doc.elements, appState: doc.appState, scrollToContent: true },
     viewModeEnabled: true,
     theme: excalidrawTheme(),
@@ -644,10 +678,15 @@ document.addEventListener('diagram-ready', () => {
   const section = document.getElementById('preview-section');
   section.hidden = false;
   section.scrollIntoView({ behavior: 'smooth', block: 'start' });
-  renderDiagram();
+  renderDiagram().catch((e) => {
+    const status = document.getElementById('status');
+    status.innerHTML = `<span class="err">Error loading preview: ${e.message}</span>`;
+  });
 });
 
-document.addEventListener('theme-changed', renderDiagram);
+document.addEventListener('theme-changed', () => {
+  renderDiagram().catch(() => {});
+});
 
 document.getElementById('download-btn').addEventListener('click', () => {
   const doc = window.__excalidrawDoc;

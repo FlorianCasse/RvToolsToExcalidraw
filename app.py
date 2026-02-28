@@ -94,9 +94,8 @@ def safe(val):
     return str(val).strip()
 
 
-def parse_rvtools(file_bytes, site_name):
+def parse_rvtools(xls, site_name):
     """Parse an RVTools .xlsx file → structured dict."""
-    xls = pd.ExcelFile(io.BytesIO(file_bytes))
     sheet_names_lower = {s.lower(): s for s in xls.sheet_names}
 
     # ── vHost sheet ──
@@ -184,9 +183,8 @@ def parse_rvtools(file_bytes, site_name):
     }
 
 
-def parse_liveoptics(file_bytes, site_name):
+def parse_liveoptics(xls, site_name):
     """Parse a LiveOptics .xlsx file → structured dict."""
-    xls = pd.ExcelFile(io.BytesIO(file_bytes))
     sheet_names_lower = {s.lower(): s for s in xls.sheet_names}
 
     hosts_sheet = sheet_names_lower.get("esx hosts")
@@ -263,9 +261,9 @@ def parse_file(file_bytes, site_name):
     xls = pd.ExcelFile(io.BytesIO(file_bytes))
     sheets_lower = [s.lower() for s in xls.sheet_names]
     if "vhost" in sheets_lower:
-        return parse_rvtools(file_bytes, site_name)
+        return parse_rvtools(xls, site_name)
     if "esx hosts" in sheets_lower:
-        return parse_liveoptics(file_bytes, site_name)
+        return parse_liveoptics(xls, site_name)
     raise ValueError(f'"{site_name}" is not a recognised RVTools or LiveOptics export')
 
 

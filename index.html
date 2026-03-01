@@ -175,7 +175,7 @@
   <input type="file" id="file-input" accept=".xlsx" multiple/>
   <div id="file-list"></div>
   <label id="vcf9-option">
-    <input type="checkbox" id="vcf9-check"/> Check VCF 9 Compatibility (vSAN HCL)
+    <input type="checkbox" id="vcf9-check"/> Check VCF 9 Compatibility (Broadcom Compatibility Guide)
   </label>
   <button class="btn" id="generate-btn" disabled onclick="generate()">
     Generate Excalidraw Diagram
@@ -287,7 +287,7 @@ function checkVcf9Compat(model, lookup) {
   const norm = normalizeModel(model).toLowerCase();
   // Exact match
   if (lookup.has(norm)) return { status: 'compatible', label: vcf9Label(lookup.get(norm)) };
-  // Check if any HCL model is contained in the host model or vice-versa
+  // Check if any BCG model is contained in the host model or vice-versa
   for (const [hclModel, releases] of lookup) {
     if (norm.includes(hclModel) || hclModel.includes(norm))
       return { status: 'compatible', label: vcf9Label(releases) };

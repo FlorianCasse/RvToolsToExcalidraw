@@ -617,7 +617,7 @@ HTML = r"""<!DOCTYPE html>
 
   <div id="file-list"></div>
   <label id="vcf9-option">
-    <input type="checkbox" id="vcf9-check"/> Check VCF 9 Compatibility (vSAN HCL)
+    <input type="checkbox" id="vcf9-check"/> Check VCF 9 Compatibility (Broadcom Compatibility Guide)
   </label>
 
   <button class="btn" id="generate-btn" disabled onclick="generate()">

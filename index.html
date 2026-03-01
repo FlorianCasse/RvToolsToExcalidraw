@@ -264,10 +264,10 @@ async function fetchHcl() {
 }
 
 function buildVcf9Lookup(hclData) {
-  // Build a Set of normalised model strings for fast lookup
-  const models = new Set();
+  // Build a Map of normalised model → release list for version-aware lookup
+  const models = new Map();
   for (const entry of hclData) {
-    models.add(entry.m.trim().toLowerCase());
+    models.set(entry.m.trim().toLowerCase(), entry.r);
   }
   return models;
 }
@@ -277,17 +277,22 @@ function normalizeModel(model) {
   return model.replace(/^(Dell\s+(Inc\.?\s*)?|HPE?\s+|Lenovo\s+|Cisco\s+|Fujitsu\s+)/i, '').trim();
 }
 
+function vcf9Label(releases) {
+  const versions = releases.map(r => r.replace(/^ESXi\s*/i, '')).sort();
+  return '\u2705 VCF ' + versions.join(' + ') + ' Ready';
+}
+
 function checkVcf9Compat(model, lookup) {
   if (!model) return { status: 'unknown', label: '\u26A0\uFE0F VCF9 ?' };
   const norm = normalizeModel(model).toLowerCase();
   // Exact match
-  if (lookup.has(norm)) return { status: 'compatible', label: '\u2705 VCF9 Ready' };
+  if (lookup.has(norm)) return { status: 'compatible', label: vcf9Label(lookup.get(norm)) };
   // Check if any HCL model is contained in the host model or vice-versa
-  for (const hclModel of lookup) {
+  for (const [hclModel, releases] of lookup) {
     if (norm.includes(hclModel) || hclModel.includes(norm))
-      return { status: 'compatible', label: '\u2705 VCF9 Ready' };
+      return { status: 'compatible', label: vcf9Label(releases) };
   }
-  return { status: 'incompatible', label: '\u274C VCF9 N/A' };
+  return { status: 'incompatible', label: '\u274C Not VCF9 Ready' };
 }
 
 let xlsxLoadPromise = null;
@@ -556,7 +561,7 @@ function generateExcalidraw(sites, vcf9Enabled) {
     const legendY = CANVAS_Y;
     const legendW = 220;
     const legendH = 90;
-    const legendText = 'VCF 9 Compatibility\n\u2705 Ready — model in HCL\n\u274C N/A — model not in HCL\n\u26A0\uFE0F ? — model unknown';
+    const legendText = 'VCF 9 Compatibility\n\u2705 VCF x.x Ready\n\u274C Not VCF9 Ready\n\u26A0\uFE0F VCF9 ? — model unknown';
     elements.push(...makeRect(uid(), legendX, legendY, legendW, legendH,
       '#FFF9E6', '#D4A017', legendText, 9, false, '#4A4A00', 'middle', 8));
   }

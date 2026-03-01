@@ -122,11 +122,16 @@ def load_hcl():
 
 
 def build_vcf9_lookup(hcl_data):
-    return {entry['m'].strip().lower() for entry in hcl_data}
+    return {entry['m'].strip().lower(): entry['r'] for entry in hcl_data}
 
 
 def normalize_model(model):
     return _VENDOR_PREFIX_RE.sub('', model).strip()
+
+
+def _vcf9_label(releases):
+    versions = sorted(r.replace('ESXi ', '') for r in releases)
+    return '\u2705 VCF ' + ' + '.join(versions) + ' Ready'
 
 
 def check_vcf9_compat(model, lookup):
@@ -134,11 +139,11 @@ def check_vcf9_compat(model, lookup):
         return {'status': 'unknown', 'label': '\u26A0\uFE0F VCF9 ?'}
     norm = normalize_model(model).lower()
     if norm in lookup:
-        return {'status': 'compatible', 'label': '\u2705 VCF9 Ready'}
-    for hcl_model in lookup:
+        return {'status': 'compatible', 'label': _vcf9_label(lookup[norm])}
+    for hcl_model, releases in lookup.items():
         if norm in hcl_model or hcl_model in norm:
-            return {'status': 'compatible', 'label': '\u2705 VCF9 Ready'}
-    return {'status': 'incompatible', 'label': '\u274C VCF9 N/A'}
+            return {'status': 'compatible', 'label': _vcf9_label(releases)}
+    return {'status': 'incompatible', 'label': '\u274C Not VCF9 Ready'}
 
 
 def parse_rvtools(xls, site_name):
@@ -458,7 +463,7 @@ def generate_excalidraw(sites, vcf9_enabled=False):
 
     # VCF9 legend
     if vcf9_enabled:
-        legend_text = "VCF 9 Compatibility\n\u2705 Ready \u2014 model in HCL\n\u274C N/A \u2014 model not in HCL\n\u26A0\uFE0F ? \u2014 model unknown"
+        legend_text = "VCF 9 Compatibility\n\u2705 VCF x.x Ready\n\u274C Not VCF9 Ready\n\u26A0\uFE0F VCF9 ? \u2014 model unknown"
         legend_els = rect(uid(), x_cursor, CANVAS_Y, 220, 90,
                           bg="#FFF9E6", stroke="#D4A017",
                           text=legend_text, font_size=9,

@@ -239,7 +239,8 @@ function safe(val) {
 
 function fmtPct(v) {
   const f = parseFloat(v);
-  return isNaN(f) ? (v || '—') : `${Math.round(f)}%`;
+  if (!isNaN(f)) return `${Math.round(f)}%`;
+  return (v && String(v).trim()) ? String(v).trim() : '—';
 }
 
 let xlsxLoadPromise = null;
@@ -248,11 +249,14 @@ function ensureXlsxLoaded() {
   if (window.XLSX) return Promise.resolve(window.XLSX);
   if (xlsxLoadPromise) return xlsxLoadPromise;
   xlsxLoadPromise = new Promise((resolve, reject) => {
+    const timeout = setTimeout(() => {
+      reject(new Error('Timed out loading XLSX parser — check your network connection'));
+    }, 15000);
     const script = document.createElement('script');
     script.src = 'https://cdn.jsdelivr.net/npm/xlsx/dist/xlsx.full.min.js';
     script.async = true;
-    script.onload = () => resolve(window.XLSX);
-    script.onerror = () => reject(new Error('Failed to load XLSX parser'));
+    script.onload = () => { clearTimeout(timeout); resolve(window.XLSX); };
+    script.onerror = () => { clearTimeout(timeout); reject(new Error('Failed to load XLSX parser')); };
     document.head.appendChild(script);
   });
   return xlsxLoadPromise;
@@ -405,6 +409,8 @@ function parseFile(arrayBuffer, siteName) {
 }
 
 // ── Excalidraw element builder ────────────────────────────────────────────────
+function randomSeed() { return (Math.random() * 0xFFFFFF) >>> 0; }
+
 function makeRect(id, x, y, w, h, bg, stroke, text = '', fontSize = 12,
                   bold = false, textColor = '#1A1A2E', vAlign = 'middle', rounded = 8) {
   const el = {
@@ -412,7 +418,7 @@ function makeRect(id, x, y, w, h, bg, stroke, text = '', fontSize = 12,
     strokeColor: stroke, backgroundColor: bg, fillStyle: 'solid',
     strokeWidth: 1, strokeStyle: 'solid', roughness: 0, opacity: 100,
     groupIds: [], roundness: { type: 3, value: rounded },
-    seed: 1, version: 1, versionNonce: 0, isDeleted: false,
+    seed: randomSeed(), version: 1, versionNonce: 0, isDeleted: false,
     boundElements: [], updated: 1, link: null, locked: false,
   };
   const elements = [el];
@@ -423,7 +429,7 @@ function makeRect(id, x, y, w, h, bg, stroke, text = '', fontSize = 12,
       id: txtId, type: 'text', x, y, width: w, height: h, angle: 0,
       strokeColor: textColor, backgroundColor: 'transparent',
       fillStyle: 'solid', strokeWidth: 1, strokeStyle: 'solid',
-      roughness: 0, opacity: 100, groupIds: [], seed: 1,
+      roughness: 0, opacity: 100, groupIds: [], seed: randomSeed(),
       version: 1, versionNonce: 0, isDeleted: false,
       boundElements: [], updated: 1, link: null, locked: false,
       text,
@@ -504,6 +510,23 @@ const status    = document.getElementById('status');
 
 let files = [];
 
+function setStatus(text, type) {
+  status.innerHTML = '';
+  if (type === 'loading') {
+    const spinner = document.createElement('span');
+    spinner.className = 'spinner';
+    status.appendChild(spinner);
+    status.appendChild(document.createTextNode(' ' + text));
+  } else if (type) {
+    const span = document.createElement('span');
+    span.className = type;
+    span.textContent = text;
+    status.appendChild(span);
+  } else {
+    status.textContent = text;
+  }
+}
+
 function guessName(filename) {
   return filename.replace(/\.xlsx$/i, '').replace(/[_-]/g, ' ').trim();
 }
@@ -513,12 +536,30 @@ function renderList() {
   files.forEach((item, i) => {
     const row = document.createElement('div');
     row.className = 'file-row';
-    row.innerHTML = `
-      <span class="file-icon">📄</span>
-      <span class="file-name" title="${item.file.name}">${item.file.name}</span>
-      <input class="site-input" type="text" value="${item.name}" placeholder="Site name"
-             oninput="files[${i}].name=this.value"/>
-      <button class="remove-btn" onclick="removeFile(${i})" title="Remove">✕</button>`;
+
+    const icon = document.createElement('span');
+    icon.className = 'file-icon';
+    icon.textContent = '📄';
+
+    const name = document.createElement('span');
+    name.className = 'file-name';
+    name.title = item.file.name;
+    name.textContent = item.file.name;
+
+    const input = document.createElement('input');
+    input.className = 'site-input';
+    input.type = 'text';
+    input.value = item.name;
+    input.placeholder = 'Site name';
+    input.addEventListener('input', () => { files[i].name = input.value; });
+
+    const btn = document.createElement('button');
+    btn.className = 'remove-btn';
+    btn.title = 'Remove';
+    btn.textContent = '✕';
+    btn.addEventListener('click', () => removeFile(i));
+
+    row.append(icon, name, input, btn);
     fileList.appendChild(row);
   });
   genBtn.disabled = files.length === 0;
@@ -530,7 +571,7 @@ function addFiles(newFiles) {
       files.push({ file: f, name: guessName(f.name) });
   }
   renderList();
-  status.innerHTML = '';
+  status.textContent = '';
 }
 
 function removeFile(i) { files.splice(i, 1); renderList(); }
@@ -595,7 +636,7 @@ function readFile(file) {
 async function generate() {
   if (!files.length) return;
   genBtn.disabled = true;
-  status.innerHTML = '<span class="spinner"></span> Generating diagram…';
+  setStatus('Generating diagram…', 'loading');
 
   try {
     await ensureXlsxLoaded();
@@ -607,9 +648,9 @@ async function generate() {
     const doc = generateExcalidraw(sites);
     window.__excalidrawDoc = doc;
     document.dispatchEvent(new CustomEvent('diagram-ready'));
-    status.innerHTML = '<span class="ok">✓ Diagram ready — see preview below</span>';
+    setStatus('✓ Diagram ready — see preview below', 'ok');
   } catch (e) {
-    status.innerHTML = `<span class="err">Error: ${e.message}</span>`;
+    setStatus('Error: ' + e.message, 'err');
   } finally {
     genBtn.disabled = false;
   }
@@ -648,18 +689,23 @@ async function ensureExcalidrawLoaded() {
     return;
   }
 
-  excalidrawLoadPromise = (async () => {
-    window.EXCALIDRAW_ASSET_PATH = 'https://esm.sh/@excalidraw/excalidraw@0.18.0/dist/prod/';
-    ensureExcalidrawStyles();
-    const [reactMod, reactDomMod, excalidrawMod] = await Promise.all([
-      import('react'),
-      import('react-dom/client'),
-      import('https://esm.sh/@excalidraw/excalidraw@0.18.0/dist/dev/index.js?external=react,react-dom'),
-    ]);
-    ReactLib = reactMod.default;
-    createRootFn = reactDomMod.createRoot;
-    ExcalidrawLib = excalidrawMod;
-  })();
+  excalidrawLoadPromise = Promise.race([
+    (async () => {
+      window.EXCALIDRAW_ASSET_PATH = 'https://esm.sh/@excalidraw/excalidraw@0.18.0/dist/prod/';
+      ensureExcalidrawStyles();
+      const [reactMod, reactDomMod, excalidrawMod] = await Promise.all([
+        import('react'),
+        import('react-dom/client'),
+        import('https://esm.sh/@excalidraw/excalidraw@0.18.0/dist/dev/index.js?external=react,react-dom'),
+      ]);
+      ReactLib = reactMod.default;
+      createRootFn = reactDomMod.createRoot;
+      ExcalidrawLib = excalidrawMod;
+    })(),
+    new Promise((_, reject) =>
+      setTimeout(() => reject(new Error('Timed out loading Excalidraw — check your network connection')), 20000)
+    ),
+  ]);
 
   await excalidrawLoadPromise;
 }
@@ -690,7 +736,7 @@ document.addEventListener('diagram-ready', () => {
   section.scrollIntoView({ behavior: 'smooth', block: 'start' });
   renderDiagram().catch((e) => {
     const status = document.getElementById('status');
-    status.innerHTML = `<span class="err">Error loading preview: ${e.message}</span>`;
+    setStatus('Error loading preview: ' + e.message, 'err');
   });
 });
 

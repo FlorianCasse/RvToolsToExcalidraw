@@ -6,12 +6,14 @@ Supports RVTools and LiveOptics .xlsx exports.
 
 import io
 import json
+import os
 import uuid
 import re
 from flask import Flask, request, send_file, Response
 import pandas as pd
 
 app = Flask(__name__)
+app.config['MAX_CONTENT_LENGTH'] = 50 * 1024 * 1024  # 50 MB upload limit
 
 # ─── Color Palette (up to 6 sites) ───────────────────────────────────────────
 PALETTES = [
@@ -94,6 +96,14 @@ def safe(val):
     return str(val).strip()
 
 
+def fmt_pct(v):
+    """Format a value as a rounded percentage string."""
+    try:
+        return f"{float(v):.0f}%"
+    except (ValueError, TypeError):
+        return str(v).strip() if v else "—"
+
+
 def parse_rvtools(xls, site_name):
     """Parse an RVTools .xlsx file → structured dict."""
     sheet_names_lower = {s.lower(): s for s in xls.sheet_names}
@@ -132,14 +142,6 @@ def parse_rvtools(xls, site_name):
         m = re.search(r'(\d+\.\d+\.\d+)', esxi)
         if m:
             esxi_short = m.group(1)
-
-        # Round CPU/Mem percentages
-        def fmt_pct(v):
-            try:
-                f = float(v)
-                return f"{f:.0f}%"
-            except Exception:
-                return v if v else "—"
 
         hosts.append({
             "hostname": hostname,
@@ -225,12 +227,6 @@ def parse_liveoptics(xls, site_name):
             esxi_short = m.group(1)
 
         perf = perf_map.get(hostname, {})
-
-        def fmt_pct(v):
-            try:
-                return f"{float(v):.0f}%"
-            except Exception:
-                return str(v).strip() if v else "—"
 
         hosts.append({
             "hostname": hostname,
@@ -587,13 +583,30 @@ function renderList() {
   files.forEach((item, i) => {
     const row = document.createElement('div');
     row.className = 'file-row';
-    row.innerHTML = `
-      <span class="file-icon">📄</span>
-      <span class="file-name" title="${item.file.name}">${item.file.name}</span>
-      <input class="site-input" type="text" value="${item.name}" placeholder="Site name"
-             oninput="files[${i}].name=this.value" />
-      <button class="remove-btn" onclick="removeFile(${i})" title="Remove">✕</button>
-    `;
+
+    const icon = document.createElement('span');
+    icon.className = 'file-icon';
+    icon.textContent = '📄';
+
+    const name = document.createElement('span');
+    name.className = 'file-name';
+    name.title = item.file.name;
+    name.textContent = item.file.name;
+
+    const input = document.createElement('input');
+    input.className = 'site-input';
+    input.type = 'text';
+    input.value = item.name;
+    input.placeholder = 'Site name';
+    input.addEventListener('input', () => { files[i].name = input.value; });
+
+    const btn = document.createElement('button');
+    btn.className = 'remove-btn';
+    btn.title = 'Remove';
+    btn.textContent = '✕';
+    btn.addEventListener('click', () => removeFile(i));
+
+    row.append(icon, name, input, btn);
     fileList.appendChild(row);
   });
   genBtn.disabled = files.length === 0;
@@ -606,7 +619,24 @@ function addFiles(newFiles) {
     }
   }
   renderList();
+  status.textContent = '';
+}
+
+function setStatus(text, type) {
   status.innerHTML = '';
+  if (type === 'loading') {
+    const spinner = document.createElement('span');
+    spinner.className = 'spinner';
+    status.appendChild(spinner);
+    status.appendChild(document.createTextNode(' ' + text));
+  } else if (type) {
+    const span = document.createElement('span');
+    span.className = type;
+    span.textContent = text;
+    status.appendChild(span);
+  } else {
+    status.textContent = text;
+  }
 }
 
 function removeFile(i) {
@@ -627,7 +657,7 @@ dropZone.addEventListener('drop', e => {
 async function generate() {
   if (!files.length) return;
   genBtn.disabled = true;
-  status.innerHTML = '<span class="spinner"></span> Generating diagram…';
+  setStatus('Generating diagram…', 'loading');
 
   const fd = new FormData();
   files.forEach((item, i) => {
@@ -639,7 +669,7 @@ async function generate() {
     const res = await fetch('/generate', { method: 'POST', body: fd });
     if (!res.ok) {
       const err = await res.text();
-      status.innerHTML = `<span class="err">Error: ${err}</span>`;
+      setStatus('Error: ' + err, 'err');
       genBtn.disabled = false;
       return;
     }
@@ -650,9 +680,9 @@ async function generate() {
     a.download = 'vmware_infrastructure.excalidraw';
     a.click();
     URL.revokeObjectURL(url);
-    status.innerHTML = '<span class="ok">✓ Diagram downloaded! Open it at excalidraw.com</span>';
+    setStatus('✓ Diagram downloaded! Open it at excalidraw.com', 'ok');
   } catch (e) {
-    status.innerHTML = `<span class="err">Network error: ${e.message}</span>`;
+    setStatus('Network error: ' + e.message, 'err');
   } finally {
     genBtn.disabled = false;
   }
@@ -677,13 +707,17 @@ def generate():
     if not uploaded:
         return "No files uploaded", 400
 
+    ALLOWED_EXT = {'.xlsx'}
     sites = []
     for i, f in enumerate(uploaded):
+        ext = os.path.splitext(f.filename or '')[1].lower()
+        if ext not in ALLOWED_EXT:
+            return f"Invalid file type: {f.filename}. Only .xlsx files are accepted.", 400
         site_name = names[i] if i < len(names) else f.filename.replace(".xlsx", "")
         try:
             data = parse_file(f.read(), site_name)
             sites.append(data)
-        except Exception as e:
+        except (ValueError, KeyError, pd.errors.ParserError) as e:
             return f"Error parsing {f.filename}: {str(e)}", 400
 
     if not sites:
@@ -691,7 +725,7 @@ def generate():
 
     try:
         excalidraw_json = generate_excalidraw(sites)
-    except Exception as e:
+    except (ValueError, KeyError, TypeError) as e:
         return f"Diagram generation error: {str(e)}", 500
 
     buf = io.BytesIO(excalidraw_json.encode("utf-8"))
